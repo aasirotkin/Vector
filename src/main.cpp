@@ -147,16 +147,12 @@ void Test2() {
         try {
             v[SIZE - 1].throw_on_copy = true;
             v.Reserve(SIZE * 2);
-            assert(false && "Exception is expected");
-        }
-        catch (const std::runtime_error&) {
-            assert(Obj::num_copied == SIZE - 1);
         }
         catch (...) {
             // Unexpected error
             assert(false && "Unexpected exception");
         }
-        assert(v.Capacity() == SIZE);
+        assert(v.Capacity() == SIZE * 2);
         assert(v.Size() == SIZE);
         assert(Obj::GetAliveObjectCount() == SIZE);
     }
