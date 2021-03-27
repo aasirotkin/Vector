@@ -163,13 +163,7 @@ public:
         }
 
         RawMemory<T> new_data(new_capacity);
-        if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
-            std::uninitialized_move_n(data_.GetAddress(), size_, new_data.GetAddress());
-        }
-        else {
-            std::uninitialized_copy_n(data_.GetAddress(), size_, new_data.GetAddress());
-        }
-        std::destroy_n(data_.GetAddress(), size_);
+        ReserveProcess(new_data);
 
         data_.Swap(new_data);
     }
@@ -198,6 +192,59 @@ public:
     void Swap(Vector& other) noexcept {
         data_.Swap(other.data_);
         std::swap(size_, other.size_);
+    }
+
+    void Resize(size_t new_size) {
+        if (new_size < size_) {
+            std::destroy_n(data_.GetAddress() + new_size, size_ - new_size);
+        }
+        else {
+            Reserve(new_size);
+            std::uninitialized_value_construct_n(data_.GetAddress() + size_, new_size - size_);
+        }
+        size_ = new_size;
+    }
+
+    void PushBack(const T& value) {
+        if (size_ == data_.Capacity()) {
+            RawMemory<T> new_data((size_ == 0) ? 1 : size_ * 2);
+            new (new_data + size_) T(value);
+            ReserveProcess(new_data);
+            data_.Swap(new_data);
+        }
+        else {
+            new (data_ + size_) T(value);
+        }
+        ++size_;
+    }
+
+    void PushBack(T&& value) {
+        if (size_ == data_.Capacity()) {
+            RawMemory<T> new_data((size_ == 0) ? 1 : size_ * 2);
+            new (new_data + size_) T(std::move(value));
+            ReserveProcess(new_data);
+            data_.Swap(new_data);
+        }
+        else {
+            new (data_ + size_) T(std::move(value));
+        }
+        ++size_;
+    }
+
+    void PopBack() noexcept {
+        std::destroy_at(data_ + size_ - 1);
+        --size_;
+    }
+
+private:
+    void ReserveProcess(RawMemory<T>& new_data) {
+        if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
+            std::uninitialized_move_n(data_.GetAddress(), size_, new_data.GetAddress());
+        }
+        else {
+            std::uninitialized_copy_n(data_.GetAddress(), size_, new_data.GetAddress());
+        }
+        std::destroy_n(data_.GetAddress(), size_);
     }
 
 private:
