@@ -2,7 +2,9 @@
 
 #include <cassert>
 #include <cstdlib>
+#include <memory>
 #include <new>
+#include <type_traits>
 #include <utility>
 
 // ----------------------------------------------------------------------------
@@ -83,32 +85,14 @@ public:
         : data_(size)
         , size_(size)
     {
-        size_t i = 0;
-        try {
-            for (; i != size; ++i) {
-                new (data_ + i) T();
-            }
-        }
-        catch (...) {
-            DestroyN(data_, i);
-            throw;
-        }
+        std::uninitialized_value_construct_n(data_.GetAddress(), size);
     }
 
     Vector(const Vector& other)
         : data_(other.size_)
         , size_(other.size_)
     {
-        size_t i = 0;
-        try {
-            for (; i != other.size_; ++i) {
-                CopyConstruct(data_ + i, other.data_[i]);
-            }
-        }
-        catch (...) {
-            DestroyN(data_, i);
-            throw;
-        }
+        std::uninitialized_copy_n(other.data_.GetAddress(), other.size_, data_.GetAddress());
     }
 
     // Резервирование памяти под элементы вектора, когда известно их примерное количество
@@ -117,24 +101,20 @@ public:
             return;
         }
 
-        size_t i = 0;
         RawMemory<T> new_data(new_capacity);
-        try {
-            for (; i != size_; ++i) {
-                CopyConstruct(new_data + i, data_[i]);
-            }
-            DestroyN(data_, size_);
+        if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
+            std::uninitialized_move_n(data_.GetAddress(), size_, new_data.GetAddress());
         }
-        catch (...) {
-            DestroyN(data_, i);
-            throw;
+        else {
+            std::uninitialized_copy_n(data_.GetAddress(), size_, new_data.GetAddress());
         }
+        std::destroy_n(data_.GetAddress(), size_);
 
         data_.Swap(new_data);
     }
 
     ~Vector() {
-        DestroyN(data_, size_);
+        std::destroy_n(data_.GetAddress(), size_);
     }
 
     size_t Size() const noexcept {
@@ -152,24 +132,6 @@ public:
     T& operator[](size_t index) noexcept {
         assert(index < size_);
         return data_[index];
-    }
-
-private:
-    // Вызывает деструкторы n объектов массива по адресу buf
-    static void DestroyN(RawMemory<T>& data, size_t n) noexcept {
-        for (size_t i = 0; i != n; ++i) {
-            Destroy(data + i);
-        }
-    }
-
-    // Создаёт копию объекта elem в сырой памяти по адресу buf
-    static void CopyConstruct(T* buf, const T& elem) {
-        new (buf) T(elem);
-    }
-
-    // Вызывает деструктор объекта по адресу buf
-    static void Destroy(T* buf) noexcept {
-        buf->~T();
     }
 
 private:
