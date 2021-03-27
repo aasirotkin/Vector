@@ -5,14 +5,82 @@
 #include <new>
 #include <utility>
 
+// ----------------------------------------------------------------------------
+
+template <typename T>
+class RawMemory {
+public:
+    RawMemory() = default;
+
+    explicit RawMemory(size_t capacity)
+        : buffer_(Allocate(capacity))
+        , capacity_(capacity) {
+    }
+
+    ~RawMemory() {
+        Deallocate(buffer_);
+    }
+
+    T* operator+(size_t offset) noexcept {
+        // Разрешается получать адрес ячейки памяти, следующей за последним элементом массива
+        assert(offset <= capacity_);
+        return buffer_ + offset;
+    }
+
+    const T* operator+(size_t offset) const noexcept {
+        return const_cast<RawMemory&>(*this) + offset;
+    }
+
+    T& operator[](size_t index) noexcept {
+        assert(index < capacity_);
+        return buffer_[index];
+    }
+
+    const T& operator[](size_t index) const noexcept {
+        return const_cast<RawMemory&>(*this)[index];
+    }
+
+    void Swap(RawMemory& other) noexcept {
+        std::swap(buffer_, other.buffer_);
+        std::swap(capacity_, other.capacity_);
+    }
+
+    T* GetAddress() noexcept {
+        return buffer_;
+    }
+
+    const T* GetAddress() const noexcept {
+        return buffer_;
+    }
+
+    size_t Capacity() const {
+        return capacity_;
+    }
+
+private:
+    // Выделяет сырую память под n элементов и возвращает указатель на неё
+    static T* Allocate(size_t n) {
+        return n != 0 ? static_cast<T*>(operator new(n * sizeof(T))) : nullptr;
+    }
+
+    // Освобождает сырую память, выделенную ранее по адресу buf при помощи Allocate
+    static void Deallocate(T* buf) noexcept {
+        operator delete(buf);
+    }
+
+    T* buffer_ = nullptr;
+    size_t capacity_ = 0;
+};
+
+// ----------------------------------------------------------------------------
+
 template <typename T>
 class Vector {
 public:
     Vector() = default;
 
     explicit Vector(size_t size)
-        : data_(Allocate(size))
-        , capacity_(size)
+        : data_(size)
         , size_(size)
     {
         size_t i = 0;
@@ -22,14 +90,13 @@ public:
             }
         }
         catch (...) {
-            Destructor(data_, i);
+            DestroyN(data_, i);
             throw;
         }
     }
 
     Vector(const Vector& other)
-        : data_(Allocate(other.size_))
-        , capacity_(other.size_)
+        : data_(other.size_)
         , size_(other.size_)
     {
         size_t i = 0;
@@ -39,45 +106,35 @@ public:
             }
         }
         catch (...) {
-            Destructor(data_, i);
+            DestroyN(data_, i);
             throw;
         }
     }
 
     // Резервирование памяти под элементы вектора, когда известно их примерное количество
     void Reserve(size_t new_capacity) {
-        if (new_capacity <= capacity_) {
+        if (new_capacity <= data_.Capacity()) {
             return;
         }
 
         size_t i = 0;
-        T* new_data = nullptr;
+        RawMemory<T> new_data(new_capacity);
         try {
-            new_data = Allocate(new_capacity);
             for (; i != size_; ++i) {
                 CopyConstruct(new_data + i, data_[i]);
             }
-            Destructor(data_, size_);
+            DestroyN(data_, size_);
         }
         catch (...) {
-            if (new_data) {
-                Destructor(new_data, i);
-            }
+            DestroyN(data_, i);
             throw;
         }
 
-        data_ = new_data;
-        capacity_ = new_capacity;
-    }
-
-    static void Swap(Vector& lhs, Vector& rhs) {
-        std::swap(lhs.data_, rhs.data_);
-        std::swap(lhs.size_, rhs.size_);
-        std::swap(lhs.capacity_, rhs.capacity_);
+        data_.Swap(new_data);
     }
 
     ~Vector() {
-        Destructor(data_, size_);
+        DestroyN(data_, size_);
     }
 
     size_t Size() const noexcept {
@@ -85,7 +142,7 @@ public:
     }
 
     size_t Capacity() const noexcept {
-        return capacity_;
+        return data_.Capacity();
     }
 
     const T& operator[](size_t index) const noexcept {
@@ -98,26 +155,10 @@ public:
     }
 
 private:
-    // Выделяет сырую память под n элементов и возвращает указатель на неё
-    static T* Allocate(size_t n) {
-        return n != 0 ? static_cast<T*>(operator new(n * sizeof(T))) : nullptr;
-    }
-
-    // Вызывает деструкторы и освобождает сырую память
-    static void Destructor(T* buf, size_t n) noexcept {
-        DestroyN(buf, n);
-        Deallocate(buf);
-    }
-
-    // Освобождает сырую память, выделенную ранее по адресу buf при помощи Allocate
-    static void Deallocate(T* buf) noexcept {
-        operator delete(buf);
-    }
-
     // Вызывает деструкторы n объектов массива по адресу buf
-    static void DestroyN(T* buf, size_t n) noexcept {
+    static void DestroyN(RawMemory<T>& data, size_t n) noexcept {
         for (size_t i = 0; i != n; ++i) {
-            Destroy(buf + i);
+            Destroy(data + i);
         }
     }
 
@@ -132,7 +173,6 @@ private:
     }
 
 private:
-    T* data_ = nullptr;
-    size_t capacity_ = 0;
+    RawMemory<T> data_;
     size_t size_ = 0;
 };
