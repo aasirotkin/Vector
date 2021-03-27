@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 #include <cstdlib>
 #include <memory>
@@ -13,6 +14,19 @@ template <typename T>
 class RawMemory {
 public:
     RawMemory() = default;
+
+    RawMemory(const RawMemory& other) = delete;
+
+    RawMemory& operator= (const RawMemory& other) = delete;
+
+    RawMemory(RawMemory&& other) noexcept {
+        Exchange(std::move(other));
+    }
+
+    RawMemory& operator= (RawMemory&& other) noexcept {
+        Exchange(std::move(other));
+        return *this;
+    }
 
     explicit RawMemory(size_t capacity)
         : buffer_(Allocate(capacity))
@@ -60,6 +74,16 @@ public:
     }
 
 private:
+    void Exchange(RawMemory&& other) {
+        Deallocate(buffer_);
+
+        buffer_ = other.buffer_;
+        capacity_ = other.capacity_;
+
+        other.buffer_ = nullptr;
+        other.capacity_ = 0;
+    }
+
     // Выделяет сырую память под n элементов и возвращает указатель на неё
     static T* Allocate(size_t n) {
         return n != 0 ? static_cast<T*>(operator new(n * sizeof(T))) : nullptr;
@@ -93,6 +117,43 @@ public:
         , size_(other.size_)
     {
         std::uninitialized_copy_n(other.data_.GetAddress(), other.size_, data_.GetAddress());
+    }
+
+    Vector& operator= (const Vector& other) {
+        if (this != &other) {
+            if (other.size_ > data_.Capacity()) {
+                Vector tmp(other);
+                Swap(tmp);
+            }
+            else {
+                size_t min_size = std::min(size_, other.size_);
+                std::copy_n(other.data_.GetAddress(), min_size, data_.GetAddress());
+                if (size_ >= other.size_) {
+                    size_t delta = size_ - other.size_;
+                    std::destroy_n(data_.GetAddress() + min_size, delta);
+                }
+                else {
+                    size_t delta = other.size_ - size_;
+                    std::uninitialized_copy_n(other.data_.GetAddress() + min_size, delta, data_.GetAddress() + min_size);
+                }
+                size_ = other.size_;
+            }
+        }
+        return *this;
+    }
+
+    Vector(Vector&& other) noexcept {
+        *this = std::move(other);
+    }
+
+    Vector& operator= (Vector&& other) noexcept {
+        if (this != &other) {
+            data_ = std::move(other.data_);
+
+            size_ = other.size_;
+            other.size_ = 0;
+        }
+        return *this;
     }
 
     // Резервирование памяти под элементы вектора, когда известно их примерное количество
@@ -132,6 +193,11 @@ public:
     T& operator[](size_t index) noexcept {
         assert(index < size_);
         return data_[index];
+    }
+
+    void Swap(Vector& other) noexcept {
+        data_.Swap(other.data_);
+        std::swap(size_, other.size_);
     }
 
 private:
