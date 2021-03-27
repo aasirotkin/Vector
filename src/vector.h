@@ -15,8 +15,15 @@ public:
         , capacity_(size)
         , size_(size)
     {
-        for (size_t i = 0; i != size; ++i) {
-            new (data_ + i) T();
+        size_t i = 0;
+        try {
+            for (; i != size; ++i) {
+                new (data_ + i) T();
+            }
+        }
+        catch (...) {
+            Destructor(data_, i);
+            throw;
         }
     }
 
@@ -25,8 +32,15 @@ public:
         , capacity_(other.size_)
         , size_(other.size_)
     {
-        for (size_t i = 0; i != other.size_; ++i) {
-            CopyConstruct(data_ + i, other.data_[i]);
+        size_t i = 0;
+        try {
+            for (; i != other.size_; ++i) {
+                CopyConstruct(data_ + i, other.data_[i]);
+            }
+        }
+        catch (...) {
+            Destructor(data_, i);
+            throw;
         }
     }
 
@@ -35,20 +49,35 @@ public:
         if (new_capacity <= capacity_) {
             return;
         }
-        T* new_data = Allocate(new_capacity);
-        for (size_t i = 0; i != size_; ++i) {
-            CopyConstruct(new_data + i, data_[i]);
+
+        size_t i = 0;
+        T* new_data = nullptr;
+        try {
+            new_data = Allocate(new_capacity);
+            for (; i != size_; ++i) {
+                CopyConstruct(new_data + i, data_[i]);
+            }
+            Destructor(data_, size_);
         }
-        DestroyN(data_, size_);
-        Deallocate(data_);
+        catch (...) {
+            if (new_data) {
+                Destructor(new_data, i);
+            }
+            throw;
+        }
 
         data_ = new_data;
         capacity_ = new_capacity;
     }
 
+    static void Swap(Vector& lhs, Vector& rhs) {
+        std::swap(lhs.data_, rhs.data_);
+        std::swap(lhs.size_, rhs.size_);
+        std::swap(lhs.capacity_, rhs.capacity_);
+    }
+
     ~Vector() {
-        DestroyN(data_, size_);
-        Deallocate(data_);
+        Destructor(data_, size_);
     }
 
     size_t Size() const noexcept {
@@ -72,6 +101,12 @@ private:
     // Выделяет сырую память под n элементов и возвращает указатель на неё
     static T* Allocate(size_t n) {
         return n != 0 ? static_cast<T*>(operator new(n * sizeof(T))) : nullptr;
+    }
+
+    // Вызывает деструкторы и освобождает сырую память
+    static void Destructor(T* buf, size_t n) noexcept {
+        DestroyN(buf, n);
+        Deallocate(buf);
     }
 
     // Освобождает сырую память, выделенную ранее по адресу buf при помощи Allocate
