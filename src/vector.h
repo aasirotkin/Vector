@@ -103,6 +103,34 @@ private:
 template <typename T>
 class Vector {
 public:
+    using iterator = T*;
+    using const_iterator = const T*;
+
+    iterator begin() noexcept {
+        return data_.GetAddress();
+    }
+
+    iterator end() noexcept {
+        return data_.GetAddress() + size_;
+    }
+
+    const_iterator begin() const noexcept {
+        return data_.GetAddress();
+    }
+
+    const_iterator end() const noexcept {
+        return data_.GetAddress() + size_;
+    }
+
+    const_iterator cbegin() const noexcept {
+        return begin();
+    }
+
+    const_iterator cend() const noexcept {
+        return end();
+    }
+
+public:
     Vector() = default;
 
     explicit Vector(size_t size)
@@ -251,7 +279,74 @@ public:
         return *(data_ + size_ - 1);
     }
 
+    template <typename... Args>
+    iterator Emplace(const_iterator pos, Args&&... args) {
+        size_t shift = pos - begin();
+
+        if (size_ == data_.Capacity()) {
+            RawMemory<T> new_data((size_ == 0) ? 1 : size_ * 2);
+            new (new_data + shift) T(std::forward<Args>(args)...);
+            try {
+                InsertProcess(new_data, 0, shift, 0);
+            }
+            catch (...) {
+                std::destroy_at(new_data + shift);
+                throw;
+            }
+            try {
+                InsertProcess(new_data, shift, size_, shift + 1);
+            }
+            catch (...) {
+                std::destroy_n(new_data.GetAddress(), shift);
+                throw;
+            }
+            std::destroy_n(data_.GetAddress(), size_);
+            data_.Swap(new_data);
+        }
+        else {
+            if (size_ != 0) {
+                size_t min_size = (size_ == 0) ? 0 : size_ - 1;
+                T cp_value = T(std::forward<Args>(args)...);
+                new (data_ + size_) T(std::move(data_[min_size]));
+                std::move_backward(data_ + shift, data_ + min_size, data_ + size_);
+                data_[shift] = std::move(cp_value);
+            }
+            else {
+                new (data_ + size_) T(std::forward<Args>(args)...);
+            }
+        }
+        ++size_;
+        return begin() + shift;
+    }
+
+    iterator Erase(const_iterator pos) noexcept {
+        size_t shift = pos - begin();
+        std::move(data_ + shift + 1, data_ + size_, data_ + shift);
+        std::destroy_at(data_ + size_ - 1);
+        --size_;
+        return begin() + shift; // temp
+    }
+
+    iterator Insert(const_iterator pos, const T& value) {
+        return Emplace(pos, value);
+    }
+
+    iterator Insert(const_iterator pos, T&& value) {
+        return Emplace(pos, std::move(value));
+    }
+
 private:
+    void InsertProcess(RawMemory<T>& new_data, size_t from, size_t to, size_t from_new) {
+        assert(to >= from);
+        if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
+            std::uninitialized_move_n(data_.GetAddress() + from, to - from, new_data.GetAddress() + from_new);
+        }
+        else {
+            std::uninitialized_copy_n(data_.GetAddress() + from, to - from, new_data.GetAddress() + from_new);
+        }
+        //std::destroy_n(data_.GetAddress() + from, to - from);
+    }
+
     void ReserveProcess(RawMemory<T>& new_data) {
         if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
             std::uninitialized_move_n(data_.GetAddress(), size_, new_data.GetAddress());
