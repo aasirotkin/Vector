@@ -236,6 +236,21 @@ public:
         --size_;
     }
 
+    template <typename... Args>
+    T& EmplaceBack(Args&&... args) {
+        if (size_ == data_.Capacity()) {
+            RawMemory<T> new_data((size_ == 0) ? 1 : size_ * 2);
+            new (new_data + size_) T(std::forward<Args>(args)...);
+            ReserveProcess(new_data);
+            data_.Swap(new_data);
+        }
+        else {
+            new (data_ + size_) T(std::forward<Args>(args)...);
+        }
+        ++size_;
+        return *(data_ + size_ - 1);
+    }
+
 private:
     void ReserveProcess(RawMemory<T>& new_data) {
         if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
