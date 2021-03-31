@@ -11,6 +11,7 @@
 template <typename T>
 class Vector {
 public:
+// ---------- Iterator --------------------------------------------------------
     using iterator = T*;
     using const_iterator = const T*;
 
@@ -39,6 +40,7 @@ public:
     }
 
 public:
+// ---------- Vector ----------------------------------------------------------
     Vector() = default;
 
     explicit Vector(size_t size)
@@ -99,7 +101,8 @@ public:
         }
 
         RawMemory<T> new_data(new_capacity);
-        ReserveProcess(new_data);
+        SelectUninitializedMoveOrCopyWhole(new_data);
+        std::destroy_n(data_.GetAddress(), size_);
 
         data_.Swap(new_data);
     }
@@ -141,30 +144,9 @@ public:
         size_ = new_size;
     }
 
-    void PushBack(const T& value) {
-        if (size_ == data_.Capacity()) {
-            RawMemory<T> new_data((size_ == 0) ? 1 : size_ * 2);
-            new (new_data + size_) T(value);
-            ReserveProcess(new_data);
-            data_.Swap(new_data);
-        }
-        else {
-            new (data_ + size_) T(value);
-        }
-        ++size_;
-    }
-
-    void PushBack(T&& value) {
-        if (size_ == data_.Capacity()) {
-            RawMemory<T> new_data((size_ == 0) ? 1 : size_ * 2);
-            new (new_data + size_) T(std::move(value));
-            ReserveProcess(new_data);
-            data_.Swap(new_data);
-        }
-        else {
-            new (data_ + size_) T(std::move(value));
-        }
-        ++size_;
+    template <typename... Args>
+    void PushBack(Args&&... args) {
+        EmplaceBack(std::forward<Args>(args)...);
     }
 
     void PopBack() noexcept {
@@ -177,7 +159,8 @@ public:
         if (size_ == data_.Capacity()) {
             RawMemory<T> new_data((size_ == 0) ? 1 : size_ * 2);
             new (new_data + size_) T(std::forward<Args>(args)...);
-            ReserveProcess(new_data);
+            SelectUninitializedMoveOrCopyWhole(new_data);
+            std::destroy_n(data_.GetAddress(), size_);
             data_.Swap(new_data);
         }
         else {
@@ -194,20 +177,8 @@ public:
         if (size_ == data_.Capacity()) {
             RawMemory<T> new_data((size_ == 0) ? 1 : size_ * 2);
             new (new_data + shift) T(std::forward<Args>(args)...);
-            try {
-                InsertProcess(new_data, 0, shift, 0);
-            }
-            catch (...) {
-                std::destroy_at(new_data + shift);
-                throw;
-            }
-            try {
-                InsertProcess(new_data, shift, size_, shift + 1);
-            }
-            catch (...) {
-                std::destroy_n(new_data.GetAddress(), shift);
-                throw;
-            }
+            SelectUninitializedMoveOrCopy(data_.GetAddress(), shift, new_data.GetAddress());
+            SelectUninitializedMoveOrCopy(data_.GetAddress() + shift, size_ - shift, new_data.GetAddress() + shift + 1);
             std::destroy_n(data_.GetAddress(), size_);
             data_.Swap(new_data);
         }
@@ -232,7 +203,7 @@ public:
         std::move(data_ + shift + 1, data_ + size_, data_ + shift);
         std::destroy_at(data_ + size_ - 1);
         --size_;
-        return begin() + shift; // temp
+        return begin() + shift;
     }
 
     iterator Insert(const_iterator pos, const T& value) {
@@ -244,25 +215,17 @@ public:
     }
 
 private:
-    void InsertProcess(RawMemory<T>& new_data, size_t from, size_t to, size_t from_new) {
-        assert(to >= from);
+    void SelectUninitializedMoveOrCopy(T* buff_from, size_t dist, T* buff_to) {
         if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
-            std::uninitialized_move_n(data_.GetAddress() + from, to - from, new_data.GetAddress() + from_new);
+            std::uninitialized_move_n(buff_from, dist, buff_to);
         }
         else {
-            std::uninitialized_copy_n(data_.GetAddress() + from, to - from, new_data.GetAddress() + from_new);
+            std::uninitialized_copy_n(buff_from, dist, buff_to);
         }
-        //std::destroy_n(data_.GetAddress() + from, to - from);
     }
 
-    void ReserveProcess(RawMemory<T>& new_data) {
-        if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
-            std::uninitialized_move_n(data_.GetAddress(), size_, new_data.GetAddress());
-        }
-        else {
-            std::uninitialized_copy_n(data_.GetAddress(), size_, new_data.GetAddress());
-        }
-        std::destroy_n(data_.GetAddress(), size_);
+    void SelectUninitializedMoveOrCopyWhole(RawMemory<T>& new_data) {
+        SelectUninitializedMoveOrCopy(data_.GetAddress(), size_, new_data.GetAddress());
     }
 
 private:
