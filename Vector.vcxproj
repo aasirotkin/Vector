@@ -167,6 +167,7 @@
     <ClCompile Include="src\test_example_functions.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\raw_memory.h" />
     <ClInclude Include="src\test_example_functions.h" />
     <ClInclude Include="src\vector.h" />
   </ItemGroup>

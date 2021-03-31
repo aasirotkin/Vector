@@ -29,5 +29,8 @@
     <ClInclude Include="src\test_example_functions.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\raw_memory.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
