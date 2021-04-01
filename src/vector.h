@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <memory>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
@@ -172,6 +173,9 @@ public:
 
     template <typename... Args>
     iterator Emplace(const_iterator pos, Args&&... args) {
+        if (pos < begin() || pos > end()) {
+            throw std::range_error("Pos value is outside the Vector");
+        }
         size_t shift = pos - begin();
 
         if (size_ == data_.Capacity()) {
@@ -198,7 +202,10 @@ public:
         return begin() + shift;
     }
 
-    iterator Erase(const_iterator pos) noexcept {
+    iterator Erase(const_iterator pos) {
+        if (pos < begin() || pos > end()) {
+            throw std::range_error("Pos value is outside the Vector");
+        }
         size_t shift = pos - begin();
         std::move(data_ + shift + 1, data_ + size_, data_ + shift);
         std::destroy_at(data_ + size_ - 1);
