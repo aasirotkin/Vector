@@ -103,7 +103,6 @@ public:
 
         RawMemory<T> new_data(new_capacity);
         SelectUninitializedMoveOrCopyWhole(new_data);
-        std::destroy_n(data_.GetAddress(), size_);
 
         data_.Swap(new_data);
     }
@@ -161,7 +160,6 @@ public:
             RawMemory<T> new_data((size_ == 0) ? 1 : size_ * 2);
             new (new_data + size_) T(std::forward<Args>(args)...);
             SelectUninitializedMoveOrCopyWhole(new_data);
-            std::destroy_n(data_.GetAddress(), size_);
             data_.Swap(new_data);
         }
         else {
@@ -181,8 +179,23 @@ public:
         if (size_ == data_.Capacity()) {
             RawMemory<T> new_data((size_ == 0) ? 1 : size_ * 2);
             new (new_data + shift) T(std::forward<Args>(args)...);
-            SelectUninitializedMoveOrCopy(data_.GetAddress(), shift, new_data.GetAddress());
-            SelectUninitializedMoveOrCopy(data_.GetAddress() + shift, size_ - shift, new_data.GetAddress() + shift + 1);
+            // ----------------------------------------------------------------
+            try {
+                SelectUninitializedMoveOrCopy(data_.GetAddress(), shift, new_data.GetAddress());
+            }
+            catch (...) {
+                std::destroy_at(new_data + shift);
+                throw;
+            }
+            // ----------------------------------------------------------------
+            try {
+                SelectUninitializedMoveOrCopy(data_.GetAddress() + shift, size_ - shift, new_data.GetAddress() + shift + 1);
+            }
+            catch (...) {
+                std::destroy_n(new_data.GetAddress(), shift);
+                throw;
+            }
+            // ----------------------------------------------------------------
             std::destroy_n(data_.GetAddress(), size_);
             data_.Swap(new_data);
         }
@@ -233,6 +246,7 @@ private:
 
     void SelectUninitializedMoveOrCopyWhole(RawMemory<T>& new_data) {
         SelectUninitializedMoveOrCopy(data_.GetAddress(), size_, new_data.GetAddress());
+        std::destroy_n(data_.GetAddress(), size_);
     }
 
 private:
