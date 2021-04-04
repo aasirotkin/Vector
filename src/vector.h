@@ -159,7 +159,15 @@ public:
         if (size_ == data_.Capacity()) {
             RawMemory<T> new_data((size_ == 0) ? 1 : size_ * 2);
             new (new_data + size_) T(std::forward<Args>(args)...);
-            SelectUninitializedMoveOrCopyWhole(new_data);
+            // ----------------------------------------------------------------
+            try {
+                SelectUninitializedMoveOrCopyWhole(new_data);
+            }
+            catch (...) {
+                std::destroy_at(new_data + size_);
+                throw;
+            }
+            // ----------------------------------------------------------------
             data_.Swap(new_data);
         }
         else {
