@@ -192,7 +192,7 @@ public:
                 SelectUninitializedMoveOrCopy(data_.GetAddress() + shift, size_ - shift, new_data.GetAddress() + shift + 1);
             }
             catch (...) {
-                std::destroy_n(new_data.GetAddress(), shift);
+                std::destroy_n(new_data.GetAddress(), shift + 1);
                 throw;
             }
             // ----------------------------------------------------------------
@@ -201,7 +201,7 @@ public:
         }
         else {
             if (size_ != 0) {
-                size_t min_size = (size_ == 0) ? 0 : size_ - 1;
+                size_t min_size = size_ - 1;
                 T cp_value = T(std::forward<Args>(args)...);
                 new (data_ + size_) T(std::move(data_[min_size]));
                 std::move_backward(data_ + shift, data_ + min_size, data_ + size_);
@@ -212,19 +212,21 @@ public:
             }
         }
         ++size_;
-        return begin() + shift;
+        return data_ + shift;
     }
 
-    iterator Erase(const_iterator pos) {
-        if (pos < begin() || pos > end()) {
-            throw std::range_error("Pos value is outside the Vector");
-        }
-        size_t shift = pos - begin();
-        std::move(data_ + shift + 1, data_ + size_, data_ + shift);
-        std::destroy_at(data_ + size_ - 1);
-        --size_;
-        return begin() + shift;
+iterator Erase(const_iterator pos) {
+    if (pos < begin() || pos > end()) {
+        throw std::range_error("Pos value is outside the Vector");
     }
+    size_t shift = pos - begin();
+    if (size_ > (shift + 1)) {
+        std::move(data_ + shift + 1, data_ + size_, data_ + shift);
+    }
+    std::destroy_at(data_ + size_ - 1);
+    --size_;
+    return data_ + shift;
+}
 
     iterator Insert(const_iterator pos, const T& value) {
         return Emplace(pos, value);
