@@ -1,3 +1,14 @@
+*.pro
+*.pro.user
+.qmake.stash
+Makefile
+Makefile.Debug
+Makefile.Release
+debug/
+release/
 .vs/
-build/
-tests/output/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+out/
